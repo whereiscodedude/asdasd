@@ -3814,7 +3814,7 @@ bool ConnectBlock(const CBlock& block, CValidationState& state, CBlockIndex* pin
             // If this check fails, we return validation state obj with a state.corruptionPossible=false attribute,
             // which will mark this header as failed. This is because the previous check on merkel root was successful,
             // that means sc txes/cert are verified, and yet their contribution to scTxsCommitment is not
-            LogPrintf("%s():%d - INVALID block: %s", __func__, __LINE__, block.ToString());
+            LogPrintf("%s():%d - INVALID block: %s, cb tx [%s]", __func__, __LINE__, block.ToString(), block.vtx[0].ToString());
             return state.DoS(100, error("%s():%d: SCTxsCommitment verification failed; block[%s] vs computed[%s]",__func__, __LINE__,
                                         block.hashScTxsCommitment.ToString(), scTxsCommitment.ToString()),
                                CValidationState::Code::INVALID, "bad-sc-txs-commitment");
