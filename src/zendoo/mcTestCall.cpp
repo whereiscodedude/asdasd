@@ -136,7 +136,7 @@ void create_verify_test_cert_proof(std::string ps_type_raw, std::string cert_typ
     // Load DLOG keys
     // Parse segment_size
     uint32_t segment_size = strtoull(argv[arg++], NULL, 0);
-    assert(zendoo_init_dlog_keys_test_mode(Sidechain::SEGMENT_SIZE, segment_size, &ret_code));
+    assert(zendoo_init_dlog_keys(segment_size, &ret_code));
     assert(ret_code == CctpErrorCode::OK);
 
     // Parse sc_id
@@ -393,7 +393,7 @@ void create_verify_test_csw_proof(std::string ps_type_raw, std::string csw_type_
     // Load DLOG keys
     // Parse segment_size
     uint32_t segment_size = strtoull(argv[arg++], NULL, 0);
-    assert(zendoo_init_dlog_keys_test_mode(Sidechain::SEGMENT_SIZE, segment_size, &ret_code));
+    assert(zendoo_init_dlog_keys(segment_size, &ret_code));
     assert(ret_code == CctpErrorCode::OK);
 
     // Parse amount
@@ -614,11 +614,13 @@ void generate(char** argv)
     // Load DLOG keys
     uint32_t segment_size = strtoull(argv[5], NULL, 0);
     CctpErrorCode ret_code = CctpErrorCode::OK;
-    assert(zendoo_init_dlog_keys_test_mode(Sidechain::SEGMENT_SIZE, segment_size, &ret_code));
+    std::cout << "Loading dlog keys\n";
+    assert(zendoo_init_dlog_keys(segment_size, &ret_code));
     assert(ret_code == CctpErrorCode::OK);
 
     // Generate proving and verifying key
     uint32_t num_constraints = strtoull(argv[6], NULL, 0);
+    std::cout << "Generating parameters\n";
     assert(zendoo_generate_mc_test_params(circ_type, ps_type, num_constraints, (path_char_t*)path.c_str(), path.size(), &ret_code));
     assert(ret_code == CctpErrorCode::OK);
 }

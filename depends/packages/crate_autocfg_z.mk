@@ -1,9 +1,9 @@
 package=crate_autocfg_z
 $(package)_crate_name=autocfg
-$(package)_version=1.0.1
+$(package)_version=1.1.0
 $(package)_download_path=https://static.crates.io/crates/$($(package)_crate_name)
 $(package)_file_name=$($(package)_crate_name)-$($(package)_version).crate
-$(package)_sha256_hash=cdb031dd78e28731d87d56cc8ffef4a8f36ca26c38fe2de700543e627f8a464a
+$(package)_sha256_hash=d468802bab17cbc0cc575e9b053f41e72aa36bfa6b7f55e3529ffa43161b97fa
 $(package)_crate_versioned_name=$($(package)_crate_name)
 
 define $(package)_preprocess_cmds
