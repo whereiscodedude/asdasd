@@ -1,11 +1,30 @@
+#include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
-#include "zcash/Address.hpp"
+#include "util.h"
 #include "wallet/wallet.h"
 #include "wallet/walletdb.h"
-#include "util.h"
+#include "zcash/Address.hpp"
 
 #include <boost/filesystem.hpp>
+
+
+class MockCWallet : public CWallet
+{
+public:
+    MockCWallet() : CWallet(),
+                    csWalletLock(cs_wallet, "cs_wallet", __FILE__, __LINE__)
+    {
+    }
+
+    MockCWallet(const std::string& strWalletFileIn) : CWallet(strWalletFileIn),
+                                                      csWalletLock(cs_wallet, "cs_wallet", __FILE__, __LINE__)
+    {
+    }
+
+private:
+    CCriticalBlock csWalletLock;
+};
 
 /**
  * This test covers methods on CWallet
@@ -14,10 +33,11 @@
  * LoadZKey()
  * LoadZKeyMetadata()
  */
-TEST(wallet_zkeys_tests, store_and_load_zkeys) {
+TEST(wallet_zkeys_tests, store_and_load_zkeys)
+{
     SelectParams(CBaseChainParams::MAIN);
 
-    CWallet wallet;
+    MockCWallet wallet;
 
     // wallet should be empty
     std::set<libzcash::PaymentAddress> addrs;
@@ -62,7 +82,7 @@ TEST(wallet_zkeys_tests, store_and_load_zkeys) {
     ASSERT_TRUE(wallet.LoadZKeyMetadata(addr, meta));
 
     // check metadata is the same
-    CKeyMetadata m= wallet.mapZKeyMetadata[addr];
+    CKeyMetadata m = wallet.mapZKeyMetadata[addr];
     ASSERT_EQ(m.nCreateTime, now);
 }
 
@@ -72,10 +92,11 @@ TEST(wallet_zkeys_tests, store_and_load_zkeys) {
  * RemoveViewingKey()
  * LoadViewingKey()
  */
-TEST(wallet_zkeys_tests, StoreAndLoadViewingKeys) {
+TEST(wallet_zkeys_tests, StoreAndLoadViewingKeys)
+{
     SelectParams(CBaseChainParams::MAIN);
 
-    CWallet wallet;
+    MockCWallet wallet;
 
     // wallet should be empty
     std::set<libzcash::PaymentAddress> addrs;
@@ -117,7 +138,8 @@ TEST(wallet_zkeys_tests, StoreAndLoadViewingKeys) {
  * This test covers methods on CWalletDB
  * WriteZKey()
  */
-TEST(wallet_zkeys_tests, write_zkey_direct_to_db) {
+TEST(wallet_zkeys_tests, write_zkey_direct_to_db)
+{
     SelectParams(CBaseChainParams::TESTNET);
 
     // Get temporary and unique path for file.
@@ -127,7 +149,7 @@ TEST(wallet_zkeys_tests, write_zkey_direct_to_db) {
     mapArgs["-datadir"] = pathTemp.string();
 
     bool fFirstRun;
-    CWallet wallet("wallet.dat");
+    MockCWallet wallet("wallet.dat");
     ASSERT_EQ(DB_LOAD_OK, wallet.LoadWallet(fFirstRun));
 
     // No default CPubKey set
@@ -189,7 +211,8 @@ TEST(wallet_zkeys_tests, write_zkey_direct_to_db) {
  * This test covers methods on CWalletDB
  * WriteViewingKey()
  */
-TEST(wallet_zkeys_tests, WriteViewingKeyDirectToDB) {
+TEST(wallet_zkeys_tests, WriteViewingKeyDirectToDB)
+{
     SelectParams(CBaseChainParams::TESTNET);
 
     // Get temporary and unique path for file.
@@ -199,7 +222,7 @@ TEST(wallet_zkeys_tests, WriteViewingKeyDirectToDB) {
     mapArgs["-datadir"] = pathTemp.string();
 
     bool fFirstRun;
-    CWallet wallet("wallet-vkey.dat");
+    MockCWallet wallet("wallet-vkey.dat");
     ASSERT_EQ(DB_LOAD_OK, wallet.LoadWallet(fFirstRun));
 
     // No default CPubKey set
@@ -230,11 +253,11 @@ TEST(wallet_zkeys_tests, WriteViewingKeyDirectToDB) {
 }
 
 
-
 /**
  * This test covers methods on CWalletDB to load/save crypted z keys.
  */
-TEST(wallet_zkeys_tests, write_cryptedzkey_direct_to_db) {
+TEST(wallet_zkeys_tests, write_cryptedzkey_direct_to_db)
+{
     SelectParams(CBaseChainParams::TESTNET);
 
     // Get temporary and unique path for file.
@@ -244,7 +267,7 @@ TEST(wallet_zkeys_tests, write_cryptedzkey_direct_to_db) {
     mapArgs["-datadir"] = pathTemp.string();
 
     bool fFirstRun;
-    CWallet wallet("wallet_crypted.dat");
+    MockCWallet wallet("wallet_crypted.dat");
     ASSERT_EQ(DB_LOAD_OK, wallet.LoadWallet(fFirstRun));
 
     // No default CPubKey set
@@ -267,25 +290,25 @@ TEST(wallet_zkeys_tests, write_cryptedzkey_direct_to_db) {
     strWalletPass.reserve(100);
     strWalletPass = "hello";
     ASSERT_TRUE(wallet.EncryptWallet(strWalletPass));
-    
+
     // adding a new key will fail as the wallet is locked
     EXPECT_ANY_THROW(wallet.GenerateNewZKey());
-    
+
     // unlock wallet and then add
     wallet.Unlock(strWalletPass);
     auto paymentAddress2 = wallet.GenerateNewZKey();
 
     // Create a new wallet from the existing wallet path
-    CWallet wallet2("wallet_crypted.dat");
+    MockCWallet wallet2("wallet_crypted.dat");
     ASSERT_EQ(DB_LOAD_OK, wallet2.LoadWallet(fFirstRun));
 
     // Confirm it's not the same as the other wallet
     ASSERT_TRUE(&wallet != &wallet2);
-    
+
     // wallet should have two keys
     wallet2.GetPaymentAddresses(addrs);
     ASSERT_EQ(2, addrs.size());
-    
+
     // check we have entries for our payment addresses
     ASSERT_TRUE(addrs.count(paymentAddress.Get()));
     ASSERT_TRUE(addrs.count(paymentAddress2.Get()));
@@ -294,15 +317,13 @@ TEST(wallet_zkeys_tests, write_cryptedzkey_direct_to_db) {
     libzcash::SpendingKey keyOut;
     wallet2.GetSpendingKey(paymentAddress.Get(), keyOut);
     ASSERT_FALSE(paymentAddress.Get() == keyOut.address());
-    
+
     // unlock wallet to get spending keys and verify payment addresses
     wallet2.Unlock(strWalletPass);
 
     wallet2.GetSpendingKey(paymentAddress.Get(), keyOut);
     ASSERT_EQ(paymentAddress.Get(), keyOut.address());
-    
+
     wallet2.GetSpendingKey(paymentAddress2.Get(), keyOut);
     ASSERT_EQ(paymentAddress2.Get(), keyOut.address());
-
 }
-
