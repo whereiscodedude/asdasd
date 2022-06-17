@@ -287,7 +287,11 @@ T multi_exp(typename std::vector<T>::const_iterator vec_start,
     if (use_multiexp)
     {
 #ifdef MULTICORE
-#pragma omp parallel for
+// chunks (and hence the number of omp threads) here can be only either 1 or omp_get_max_threads().
+// In zend, we always end up having chunks==1 when verifying proofs, and omp_get_max_threads() when generating proofs.
+// This means that we do not continuously change the number of threads, given that proofs generation occurs rarely, and
+// takes a different order of magnitude in time, compared to verification.
+#pragma omp parallel for num_threads(chunks)
 #endif
         for (size_t i = 0; i < chunks; ++i)
         {
@@ -300,7 +304,8 @@ T multi_exp(typename std::vector<T>::const_iterator vec_start,
     else
     {
 #ifdef MULTICORE
-#pragma omp parallel for
+// See comment above
+#pragma omp parallel for num_threads(chunks)
 #endif
         for (size_t i = 0; i < chunks; ++i)
         {
