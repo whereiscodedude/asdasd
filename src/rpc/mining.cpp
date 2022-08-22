@@ -659,8 +659,10 @@ UniValue getblocktemplate(const UniValue& params, bool fHelp)
 
     UniValue txCoinbase = NullUniValue;
     UniValue transactions(UniValue::VARR);
-    map<uint256, int64_t> setTxIndex;
+    map<uint256, int64_t> setTxIndex;       // This one keeps track of tx-tx and tx-cert dependencies
     int i = 0;
+    map<uint256, int64_t> setCertIndex;     // This one keeps track of cert-cert dependencies
+    int i_cert = 1;
     BOOST_FOREACH (const CTransaction& tx, pblock->vtx) {
         uint256 txHash = tx.GetHash();
         setTxIndex[txHash] = i++;
@@ -746,11 +748,31 @@ UniValue getblocktemplate(const UniValue& params, bool fHelp)
         int cert_idx_in_template = 0;
         BOOST_FOREACH (const CScCertificate& cert, pblock->vcert) {
             uint256 certHash = cert.GetHash();
+            setCertIndex[certHash] = i_cert++;
             UniValue entry(UniValue::VOBJ);
  
             entry.pushKV("data", EncodeHexCert(cert));
             entry.pushKV("hash", certHash.GetHex());
-            // no depends for cert since there are no inputs
+
+            UniValue deps(UniValue::VARR);
+            // This loop builds the 'depends' json array, keeping track of tx-cert dependencies
+            BOOST_FOREACH (const CTxIn &in, cert.GetVin())
+            {
+                if (setTxIndex.count(in.prevout.hash))
+                    deps.push_back(setTxIndex[in.prevout.hash]);
+            }
+            entry.pushKV("depends", deps);
+
+            UniValue certdeps(UniValue::VARR);
+            // This loop builds the 'certdepends' json array, keeping track of cert-cert dependencies
+            BOOST_FOREACH (const CTxIn &in, cert.GetVin())
+            {
+                if (setCertIndex.count(in.prevout.hash))
+                    certdeps.push_back(setCertIndex[in.prevout.hash]);
+            }
+            entry.pushKV("certdepends", certdeps);
+            // TODO: manage also epoch dependencies
+
             entry.pushKV("fee", pblocktemplate->vCertFees[cert_idx_in_template]);
             entry.pushKV("sigops", pblocktemplate->vCertSigOps[cert_idx_in_template]);
             certificates.push_back(entry);
