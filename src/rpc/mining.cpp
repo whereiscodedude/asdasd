@@ -755,23 +755,19 @@ UniValue getblocktemplate(const UniValue& params, bool fHelp)
             entry.pushKV("hash", certHash.GetHex());
 
             UniValue deps(UniValue::VARR);
-            // This loop builds the 'depends' json array, keeping track of tx-cert dependencies
+            UniValue certdeps(UniValue::VARR);
+            // This loop builds the 'depends' and 'certdepends' json arrays. First one keeps track of
+            // tx-cert dependecies, while the latter cert-cert
+            // TODO: manage also epoch dependencies
             BOOST_FOREACH (const CTxIn &in, cert.GetVin())
             {
                 if (setTxIndex.count(in.prevout.hash))
                     deps.push_back(setTxIndex[in.prevout.hash]);
-            }
-            entry.pushKV("depends", deps);
-
-            UniValue certdeps(UniValue::VARR);
-            // This loop builds the 'certdepends' json array, keeping track of cert-cert dependencies
-            BOOST_FOREACH (const CTxIn &in, cert.GetVin())
-            {
                 if (setCertIndex.count(in.prevout.hash))
                     certdeps.push_back(setCertIndex[in.prevout.hash]);
             }
+            entry.pushKV("depends", deps);
             entry.pushKV("certdepends", certdeps);
-            // TODO: manage also epoch dependencies
 
             entry.pushKV("fee", pblocktemplate->vCertFees[cert_idx_in_template]);
             entry.pushKV("sigops", pblocktemplate->vCertSigOps[cert_idx_in_template]);
