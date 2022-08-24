@@ -135,6 +135,7 @@ testScripts=(
   'sc_getscgenesisinfo.py'
   'fundaddresses.py'
   'sc_getcertmaturityinfo.py'
+  'sc_cert_depends.py'
 );
 testScriptsExt=(
   'getblocktemplate_longpoll.py'
