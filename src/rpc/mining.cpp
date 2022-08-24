@@ -758,7 +758,6 @@ UniValue getblocktemplate(const UniValue& params, bool fHelp)
             UniValue certdeps(UniValue::VARR);
             // This loop builds the 'depends' and 'certdepends' json arrays. First one keeps track of
             // tx-cert dependecies, while the latter cert-cert
-            // TODO: manage also epoch dependencies
             BOOST_FOREACH (const CTxIn &in, cert.GetVin())
             {
                 if (setTxIndex.count(in.prevout.hash))
@@ -766,6 +765,19 @@ UniValue getblocktemplate(const UniValue& params, bool fHelp)
                 if (setCertIndex.count(in.prevout.hash))
                     certdeps.push_back(setCertIndex[in.prevout.hash]);
             }
+            // We are assuming that, by construction, certificates are ordered by increasing
+            // epoch number, so when adding cert whose epoch is n, we are sure that epoch (n-1) cert
+            // is already in setCertIndex
+            for (const std::pair<uint256, int64_t>& certinCertIndex: setCertIndex) {
+                uint256 h = certinCertIndex.first;
+                // find this cert among the one in the block and check if its epoch is n-1
+                for (const CScCertificate& certInBlock: pblock->vcert) {
+                    if (certInBlock.GetHash() == h && certInBlock.epochNumber == cert.epochNumber - 1) {
+                        certdeps.push_back(certinCertIndex.second);
+                    }
+                }
+            }
+
             entry.pushKV("depends", deps);
             entry.pushKV("certdepends", certdeps);
 

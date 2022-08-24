@@ -314,6 +314,8 @@ bool AddToPriorities(const CTransactionBase& txBase, const CCoinsViewCache& view
 
         // Priority is sum(valuein * age) / modified_txsize
         dPriority = txBase.ComputePriority(dPriority, nTxSize);
+        // TODO: does it make sense to differently evalute dPriority in case of
+        //       epoch dependency rather than tx?
         mempool.ApplyDeltas(hash, dPriority, nTotalIn);
         //nFee = nTotalIn - tx.GetValueOut();
         nFee = txBase.GetFeeAmount(nTotalIn);
@@ -323,6 +325,44 @@ bool AddToPriorities(const CTransactionBase& txBase, const CCoinsViewCache& view
         porphan->dPriority = dPriority;
         porphan->feeRate = feeRate;
     }
+    return true;
+}
+
+bool GetEpochsDependencies(const CScCertificate& inCert, CAmount& nTotalIn, list<COrphan>& vOrphan,
+                             map<uint256, vector<COrphan*> >& mapDependers, COrphan*& porphan)
+{
+    const uint256&  hash   = inCert.GetHash();
+    const int32_t   epoch  = inCert.epochNumber;
+    const uint256&  scId   = inCert.GetScId();
+
+    for (const std::pair<const uint256,  CCertificateMemPoolEntry> entry: mempool.mapCertificate) {
+        const uint256&          certHashInMempool   = entry.first;
+        const CScCertificate&   certInMempool       = entry.second.GetCertificate();
+
+        // Ignore certificates for other SCs
+        if (certInMempool.GetScId() != scId)
+            continue;
+
+        // Instead, add a dependency if we find a certificate whose epoch is specifically
+        // the previous than the one we are currently evaluating
+        if (certInMempool.epochNumber == epoch - 1) {
+            if (!porphan)
+            {
+                // Use list for automatic deletion
+                vOrphan.push_back(COrphan(&inCert));
+                porphan = &vOrphan.back();
+            }
+            // If already present because it depends from a vout of certHashInMempool, the following instructions does nothing...
+            mapDependers[certHashInMempool].push_back(porphan);
+            porphan->setDependsOn.insert(certHashInMempool);
+            // TODO: Check that nTotalIn is evaluated correctly!
+            for (const CTxIn& txin: inCert.GetVin())
+                nTotalIn += mempool.mapCertificate[certHashInMempool].GetCertificate().GetVout()[txin.prevout.n].nValue;
+            LogPrint("sc", "%s():%d - [%s] depends on certificate [%s] for epoch\n",
+                __func__, __LINE__, hash.ToString(), certHashInMempool.ToString());
+        }
+    }
+
     return true;
 }
 
@@ -338,6 +378,19 @@ void GetBlockCertPriorityData(const CCoinsViewCache& view, int nHeight,
 
         if (!GetInputsDependencies(cert, nTotalIn, vOrphan, mapDependers, porphan) )
         {
+            if (porphan)
+                vOrphan.pop_back();
+            continue;
+        }
+
+        // Here we scan all the other certs currently stored in the mempool to detect possible dependencies
+        // related to consecutive epochs. This is possible only for non-ceasible SC, as it is allowed to create blocks
+        // having certs for different epochs.
+        CSidechain targetSc;
+        view.GetSidechain(cert.GetScId(), targetSc);
+        if (targetSc.isNonCeasing() && !GetEpochsDependencies(cert, nTotalIn, vOrphan, mapDependers, porphan))
+        {
+            assert(!cert.IsTransaction(cert.nVersion));
             if (porphan)
                 vOrphan.pop_back();
             continue;
