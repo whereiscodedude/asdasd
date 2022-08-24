@@ -44,8 +44,10 @@ class sc_cert_depends(BitcoinTestFramework):
         self.is_network_split = split
         self.sync_all()
 
-    def run_test_with_scversion(self, scversion, ceasable = True):
+    def run_test(self):
         # Preliminary setup for this run
+        scversion = 0
+        ceasable = True
         sc_name = "sc" + str(scversion) + str(ceasable)
         epoch_length = 0 if not ceasable else EPOCH_LENGTH
         creation_amount = Decimal("10.0")
@@ -170,7 +172,7 @@ class sc_cert_depends(BitcoinTestFramework):
             "amount": creation_amount, "wCertVk": vk1, "constant": constant1
         }
         cmdInput2 = {
-            "version": scversion, "withdrawalEpochLength": epoch_length, "toaddress": "effe",
+            "version": 2, "withdrawalEpochLength": 0, "toaddress": "effe",
             "amount": creation_amount, "wCertVk": vk2, "constant": constant2
         }
 
@@ -186,14 +188,14 @@ class sc_cert_depends(BitcoinTestFramework):
         scid1 = ret['scid']
         creating_tx_1 = ret['txid']
         scid1_swapped = str(swap_bytes(scid1))
-        mark_logs("Node 0 created a SC 1: " + scid1, self.nodes, DEBUG_MODE, 'c')
+        mark_logs("Node 0 created a     ceasable SC 1: " + scid1, self.nodes, DEBUG_MODE, 'c')
         self.sync_all()
 
         ret = self.nodes[0].sc_create(cmdInput2)
         scid2 = ret['scid']
         creating_tx_2 = ret['txid']
         scid2_swapped = str(swap_bytes(scid2))
-        mark_logs("Node 0 created a SC 2: " + scid2, self.nodes, DEBUG_MODE, 'c')
+        mark_logs("Node 0 created a non-ceasable SC 2: " + scid2, self.nodes, DEBUG_MODE, 'c')
         self.sync_all()
 
         # (2) Node 0 mines n blocks to reach the end of epoch 0
@@ -203,7 +205,7 @@ class sc_cert_depends(BitcoinTestFramework):
         self.sync_all()
 
         # (3) build and send a certificate. This also will prevent sc to cease
-        bwt_amount = Decimal("0.5")
+        bwt_amount = Decimal("0.7")
         quality = 5
         new_addr = self.nodes[1].getnewaddress()
         amount_cert_1 = {"address": new_addr, "amount": bwt_amount}
@@ -411,13 +413,117 @@ class sc_cert_depends(BitcoinTestFramework):
         self.sync_all()
 
 
-    def run_test(self):
-        mark_logs("**SC version 0", self.nodes, DEBUG_MODE, 'b')
-        self.run_test_with_scversion(0)
-        mark_logs("**SC version 2 - ceasable SC", self.nodes, DEBUG_MODE, 'b')
-        self.run_test_with_scversion(2, True)
-        mark_logs("**SC version 2 - non-ceasable SC", self.nodes, DEBUG_MODE, 'b')
-        self.run_test_with_scversion(2, False)
+        ########### Test on cerificates for non-ceasable sidechains:
+        # Mine a block to clean each mempool
+        self.nodes[0].generate(1)
+        mark_logs(f"Node 0 mines 1 block to clean the mempool", self.nodes, DEBUG_MODE, 'e')
+        self.sync_all()
+
+        # (1) node 0 creates cert1 (no dependencies) for epoch 0
+        bwt_amount = Decimal("0.8")
+        quality = 0
+        epoch_length2 = 0
+        new_addr = self.nodes[1].getnewaddress()
+        amount_cert_1 = {"address": new_addr, "amount": bwt_amount}
+
+        epoch_number, epoch_cum_tree_hash = get_epoch_data(scid2, self.nodes[1], epoch_length2, is_non_ceasing=True, reference_height = self.nodes[0].getblockcount() - 10)
+        proof = self.mcTest.create_test_proof(sc_name + "2", scid2_swapped, epoch_number, quality, MBTR_SC_FEE, 
+                FT_SC_FEE, epoch_cum_tree_hash, constant2, [new_addr], [bwt_amount])
+        try:
+            cert1 = self.nodes[0].sc_send_certificate(scid2, epoch_number, quality,
+                epoch_cum_tree_hash, proof, [amount_cert_1], FT_SC_FEE, MBTR_SC_FEE, CERT_FEE)
+            mark_logs(f"Node 0 sent cert1: " + cert1, self.nodes, DEBUG_MODE, 'g')
+        except JSONRPCException as e:
+            errorString = e.error['message']
+            mark_logs(f"Send certificate failed with reason {errorString}", self.nodes, DEBUG_MODE, 'r')
+        sync_mempools(self.nodes)
+
+        # (2) node0 creates tx1 and tx2 without mining a block (no dependencies)
+        taddr1 = self.nodes[0].getnewaddress()
+        inputs      = [] #fundrawtransaction will fill the gap
+        outputs     = {taddr1: 1.0}
+        rawtx       = self.nodes[0].createrawtransaction(inputs, outputs)
+        rawtxfund   = self.nodes[0].fundrawtransaction(rawtx)
+        signedtx    = self.nodes[0].signrawtransaction(rawtxfund['hex'])
+        tx1         = self.nodes[0].sendrawtransaction(signedtx['hex'])
+        mark_logs(f"Node 0 generated tx1: " + tx1, self.nodes, DEBUG_MODE, 'g')
+        self.sync_all()
+        rawtx       = self.nodes[0].createrawtransaction(inputs, outputs)
+        rawtxfund   = self.nodes[0].fundrawtransaction(rawtx)
+        signedtx    = self.nodes[0].signrawtransaction(rawtxfund['hex'])
+        tx2         = self.nodes[0].sendrawtransaction(signedtx['hex'])
+        mark_logs(f"Node 0 generated tx2: " + tx2, self.nodes, DEBUG_MODE, 'g')
+        self.sync_all()
+
+        # (3) node 0 creates cert2 for epoch 1. It depends for epoch and tx from cert1
+        bwt_amount = Decimal("0.4")
+        new_addr = self.nodes[1].getnewaddress()
+        amount_cert_2 = {"address": new_addr, "amount": bwt_amount}
+
+        epoch_number, epoch_cum_tree_hash = get_epoch_data(scid2, self.nodes[1], epoch_length2, is_non_ceasing=True, reference_height = self.nodes[0].getblockcount() - 8)
+        proof = self.mcTest.create_test_proof(sc_name + "2", scid2_swapped, epoch_number, quality, MBTR_SC_FEE, 
+                FT_SC_FEE, epoch_cum_tree_hash, constant2, [new_addr], [bwt_amount])
+        try:
+            cert2 = self.nodes[0].sc_send_certificate(scid2, epoch_number, quality,
+                epoch_cum_tree_hash, proof, [amount_cert_2], FT_SC_FEE, MBTR_SC_FEE, CERT_FEE)
+            mark_logs(f"Node 0 sent cert2: " + cert2, self.nodes, DEBUG_MODE, 'g')
+        except JSONRPCException as e:
+            errorString = e.error['message']
+            mark_logs(f"Send certificate failed with reason {errorString}", self.nodes, DEBUG_MODE, 'r')
+        sync_mempools(self.nodes)
+
+        # (4) node 0 creates cert3. It depends from cert2 for the epochs and from tx2 for the txs
+        bwt_amount = Decimal("0.2")
+        new_addr = self.nodes[1].getnewaddress()
+        inputs  = [{'txid' : tx2, 'vout' : 0}]
+        amount_from_cert = \
+                self.nodes[0].getrawtransaction(tx2,1)['vout'][0]['value']
+        change3 = amount_from_cert - bwt_amount - CERT_FEE
+        outputs = {new_addr : bwt_amount, self.nodes[1].getnewaddress(): change3}
+
+        epoch_number, epoch_cum_tree_hash = get_epoch_data(scid2, self.nodes[1], epoch_length2, is_non_ceasing=True, reference_height = self.nodes[0].getblockcount() - 6)
+        proof = self.mcTest.create_test_proof(sc_name + "2", scid2_swapped, epoch_number, quality, MBTR_SC_FEE, 
+                FT_SC_FEE, epoch_cum_tree_hash, constant2, [new_addr], [bwt_amount])
+        params = {
+            "scid": scid2,
+            "quality": quality,
+            "endEpochCumScTxCommTreeRoot": epoch_cum_tree_hash,
+            "scProof": proof,
+            "withdrawalEpochNumber": epoch_number}
+        try:
+            rawcert     = self.nodes[0].createrawcertificate(inputs, outputs, [{"address": new_addr, "amount": bwt_amount}], params)
+            signed_cert = self.nodes[0].signrawtransaction(rawcert)
+            cert3       = self.nodes[0].sendrawtransaction(signed_cert['hex'])
+            mark_logs(f"Node 0 generated cert3: " + cert3, self.nodes, DEBUG_MODE, 'g')
+        except JSONRPCException as e:
+            errorString = e.error['message']
+            mark_logs(f"Send certificate failed with reason {errorString}", self.nodes, DEBUG_MODE, 'r')
+        sync_mempools(self.nodes)
+
+        # (5) verify all the dependencies
+        ret = self.nodes[0].getblocktemplate()
+        for h in ret['transactions']:
+            # tx1 and tx2 do not have any dependency
+            if h['hash'] == tx1 or h['hash'] == tx2:
+                assert_equal([], h['depends'])
+        for h in ret['certificates']:
+            # cert1 does not have any dependency
+            if h['hash'] == cert1:
+                assert_equal([], h['depends'])
+                assert_equal([], h['certdepends'])
+            # cert2 depends from cert1
+            if h['hash'] == cert2:
+                ord_depend_cert = h['certdepends'][0]
+                assert_equal([], h['depends'])
+                assert_equal(ret['certificates'][ord_depend_cert - 1]['hash'], cert1)
+            # cert3 depends from tx2 and cert2
+            if h['hash'] == cert3:
+                ord_depend_tx = h['depends'][0]
+                ord_depend_cert = h['certdepends'][0]
+                assert_equal(ret['transactions'][ord_depend_tx - 1]['hash'], tx2)
+                assert_equal(ret['certificates'][ord_depend_cert - 1]['hash'], cert2)
+        mark_logs(f"Assertion passed", self.nodes, DEBUG_MODE, 'y')
+        self.sync_all()
 
 
 if __name__ == '__main__':
